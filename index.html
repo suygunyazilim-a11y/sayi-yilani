@@ -1,0 +1,474 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAYI YILANI</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 15px;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg,#182848,#4b6cb7);
+  color: white;
+  text-align: center;
+}
+h1 { color: #ffe66d; font-size: 34px; margin: 10px; }
+.subtitle { margin: 5px 0 15px; }
+.game {
+  max-width: 650px;
+  margin: auto;
+}
+.question {
+  background: white;
+  color: #263238;
+  border-radius: 16px;
+  padding: 15px;
+  margin: 12px auto;
+  max-width: 600px;
+  box-shadow: 0 4px 12px #0004;
+}
+#question {
+  font-size: 30px;
+  font-weight: bold;
+  color: #e65100;
+}
+canvas {
+  display: block;
+  width: min(92vw, 600px);
+  height: auto;
+  margin: 12px auto;
+  background: #e8f5e9;
+  border: 6px solid #ffffff;
+  border-radius: 12px;
+  touch-action: none;
+}
+button {
+  border: none;
+  border-radius: 12px;
+  padding: 13px 20px;
+  margin: 5px;
+  font-size: 17px;
+  font-weight: bold;
+  cursor: pointer;
+  background: #ffca28;
+  color: #263238;
+}
+button:hover { filter: brightness(1.08); }
+.controls {
+  display: grid;
+  grid-template-columns: 60px 60px 60px;
+  justify-content: center;
+  gap: 6px;
+  margin: 12px;
+}
+.controls button {
+  padding: 12px;
+  font-size: 23px;
+  margin: 0;
+}
+.message {
+  min-height: 28px;
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffe66d;
+}
+.help { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="game">
+  <h1>🐍 SAYI YILANI</h1>
+  <div class="subtitle">Doğru cevabı bul, yılanını büyüt!</div>
+
+  <div class="question">
+    <div>MATEMATİK SORUSU</div>
+    <div id="question">Hazır mısın?</div>
+  </div>
+
+  <canvas id="game" width="600" height="600"></canvas>
+
+  <div class="message" id="message">
+    Oyuna başlamak için butona bas!
+  </div>
+
+  <button id="startBtn">▶ Oyuna Başla</button>
+  <button id="restartBtn">↻ Yeniden Başlat</button>
+
+  <div class="controls">
+    <div></div>
+    <button data-dir="up">⬆️</button>
+    <div></div>
+    <button data-dir="left">⬅️</button>
+    <button data-dir="down">⬇️</button>
+    <button data-dir="right">➡️</button>
+  </div>
+
+  <p class="help">
+    Bilgisayar: Yön tuşları veya W-A-S-D<br>
+    Telefon: Ekrandaki yön tuşları veya kaydırma
+  </p>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const questionEl = document.getElementById("question");
+const messageEl = document.getElementById("message");
+const startBtn = document.getElementById("startBtn");
+
+const CELL = 30;
+const SIZE = 20;
+
+let snake = [];
+let direction = "right";
+let nextDirection = "right";
+let choices = [];
+let correctAnswer = 0;
+let currentQuestion = "";
+let running = false;
+let gameOver = false;
+let timer = null;
+let touchStart = null;
+
+function random(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function occupied(x, y) {
+  return snake.some(p => p.x === x && p.y === y) ||
+         choices.some(p => p.x === x && p.y === y);
+}
+
+function freeCell() {
+  let x, y, attempts = 0;
+  do {
+    x = random(0, SIZE - 1);
+    y = random(0, SIZE - 1);
+    attempts++;
+    if (attempts > 1000) return null;
+  } while (occupied(x, y));
+  return {x, y};
+}
+
+function makeQuestion() {
+  let a, b, operation;
+
+  if (Math.random() < 0.5) {
+    operation = "+";
+    a = random(10, 59);
+    b = random(10, 59);
+    if (a + b > 100) b = 100 - a;
+    correctAnswer = a + b;
+  } else {
+    operation = "-";
+    a = random(20, 99);
+    b = random(0, a);
+    correctAnswer = a - b;
+  }
+
+  currentQuestion = `${a} ${operation} ${b} = ?`;
+  questionEl.textContent = currentQuestion;
+  makeChoices();
+}
+
+function makeChoices() {
+  choices = [];
+
+  let answers = [correctAnswer];
+
+  while (answers.length < 3) {
+    let wrong = correctAnswer + random(-15, 15);
+    if (wrong >= 0 && wrong <= 100 && !answers.includes(wrong)) {
+      answers.push(wrong);
+    }
+  }
+
+  // Cevapları karıştır
+  answers.sort(() => Math.random() - 0.5);
+
+  for (let value of answers) {
+    let cell = freeCell();
+    if (!cell) continue;
+    choices.push({...cell, value});
+  }
+}
+
+function drawGrid() {
+  ctx.strokeStyle = "#d0e5d0";
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i <= SIZE; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * CELL, 0);
+    ctx.lineTo(i * CELL, 600);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, i * CELL);
+    ctx.lineTo(600, i * CELL);
+    ctx.stroke();
+  }
+}
+
+function drawChoices() {
+  for (let c of choices) {
+    const x = c.x * CELL;
+    const y = c.y * CELL;
+
+    ctx.fillStyle = "#ff9800";
+    ctx.beginPath();
+    ctx.roundRect(x + 2, y + 2, CELL - 4, CELL - 4, 7);
+    ctx.fill();
+
+    ctx.fillStyle = "white";
+    ctx.font = "bold 16px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(c.value, x + CELL / 2, y + CELL / 2);
+  }
+}
+
+function drawSnake() {
+  snake.forEach((part, index) => {
+    const x = part.x * CELL;
+    const y = part.y * CELL;
+
+    ctx.fillStyle = index === 0 ? "#1b5e20" : "#43a047";
+    ctx.beginPath();
+    ctx.roundRect(x + 2, y + 2, CELL - 4, CELL - 4, 9);
+    ctx.fill();
+
+    if (index === 0) {
+      ctx.fillStyle = "white";
+      let eyeX = x + 20;
+      let eyeY = y + 9;
+
+      if (direction === "left") {
+        eyeX = x + 9;
+        eyeY = y + 9;
+      }
+      if (direction === "up") {
+        eyeX = x + 9;
+        eyeY = y + 9;
+      }
+      if (direction === "down") {
+        eyeX = x + 9;
+        eyeY = y + 20;
+      }
+
+      ctx.beginPath();
+      ctx.arc(eyeX, eyeY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(eyeX + 5, eyeY, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, 600, 600);
+  drawGrid();
+  drawChoices();
+  drawSnake();
+
+  if (!running && !gameOver) {
+    ctx.fillStyle = "#263238";
+    ctx.font = "bold 25px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("OYUNA BAŞLAMAK İÇİN TIKLA", 300, 300);
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillRect(0, 0, 600, 600);
+    ctx.fillStyle = "white";
+    ctx.textAlign = "center";
+    ctx.font = "bold 40px Arial";
+    ctx.fillText("OYUN BİTTİ!", 300, 275);
+    ctx.font = "22px Arial";
+    ctx.fillText("Yeniden başlatabilirsin.", 300, 320);
+  }
+}
+
+function setDirection(dir) {
+  const opposite = {
+    up: "down",
+    down: "up",
+    left: "right",
+    right: "left"
+  };
+
+  if (opposite[dir] !== direction) {
+    nextDirection = dir;
+  }
+}
+
+function move() {
+  if (!running) return;
+
+  direction = nextDirection;
+
+  const head = {...snake[0]};
+
+  if (direction === "up") head.y--;
+  if (direction === "down") head.y++;
+  if (direction === "left") head.x--;
+  if (direction === "right") head.x++;
+
+  // Duvara çarpma
+  if (head.x < 0 || head.x >= SIZE ||
+      head.y < 0 || head.y >= SIZE) {
+    endGame();
+    return;
+  }
+
+  // Kendine çarpma
+  if (snake.some((p, i) =>
+    i < snake.length - 1 && p.x === head.x && p.y === head.y
+  )) {
+    endGame();
+    return;
+  }
+
+  snake.unshift(head);
+
+  const eatenIndex = choices.findIndex(c =>
+    c.x === head.x && c.y === head.y
+  );
+
+  if (eatenIndex !== -1) {
+    const eaten = choices[eatenIndex];
+
+    if (eaten.value === correctAnswer) {
+      // Doğru cevap: kuyruk korunur, yılan büyür.
+      messageEl.textContent = "🎉 Harika! Doğru cevap. Yılan büyüdü!";
+      makeQuestion();
+    } else {
+      // Yanlış cevap: yılan büyümez.
+      // Kuyruk normal şekilde ilerler.
+      snake.pop();
+      messageEl.textContent = "🙂 Bu cevap yanlış. Tekrar dene!";
+      // Aynı soru ve doğru cevap korunur.
+      makeChoices();
+    }
+  } else {
+    // Yem yenmediyse kuyruk ilerler.
+    snake.pop();
+  }
+
+  draw();
+}
+
+function endGame() {
+  running = false;
+  gameOver = true;
+  clearInterval(timer);
+  startBtn.textContent = "▶ Oyuna Başla";
+  messageEl.textContent = "🐍 Oyun bitti! Yeniden deneyebilirsin.";
+  draw();
+}
+
+function startGame() {
+  if (running) return;
+
+  if (gameOver) {
+    resetGame();
+  }
+
+  running = true;
+  startBtn.textContent = "⏸ Duraklat";
+  messageEl.textContent = "Doğru sayıları bul ve büyü!";
+  clearInterval(timer);
+  timer = setInterval(move, 170);
+  draw();
+}
+
+function resetGame() {
+  clearInterval(timer);
+  running = false;
+  gameOver = false;
+
+  snake = [
+    {x: 5, y: 10},
+    {x: 4, y: 10},
+    {x: 3, y: 10}
+  ];
+
+  direction = "right";
+  nextDirection = "right";
+  startBtn.textContent = "▶ Oyuna Başla";
+  messageEl.textContent = "Oyuna başlamak için butona bas!";
+  makeQuestion();
+  draw();
+}
+
+startBtn.addEventListener("click", () => {
+  if (running) {
+    running = false;
+    clearInterval(timer);
+    startBtn.textContent = "▶ Devam Et";
+    messageEl.textContent = "Oyun duraklatıldı.";
+    draw();
+  } else {
+    startGame();
+  }
+});
+
+document.getElementById("restartBtn").addEventListener("click", resetGame);
+
+document.addEventListener("keydown", e => {
+  const keys = {
+    ArrowUp: "up",
+    ArrowDown: "down",
+    ArrowLeft: "left",
+    ArrowRight: "right",
+    w: "up", W: "up",
+    s: "down", S: "down",
+    a: "left", A: "left",
+    d: "right", D: "right"
+  };
+
+  if (keys[e.key]) {
+    e.preventDefault();
+    setDirection(keys[e.key]);
+  }
+});
+
+document.querySelectorAll("[data-dir]").forEach(button => {
+  button.addEventListener("click", () => {
+    setDirection(button.dataset.dir);
+  });
+});
+
+canvas.addEventListener("touchstart", e => {
+  const t = e.touches[0];
+  touchStart = {x: t.clientX, y: t.clientY};
+}, {passive: true});
+
+canvas.addEventListener("touchend", e => {
+  if (!touchStart) return;
+
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStart.x;
+  const dy = t.clientY - touchStart.y;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 20) setDirection("right");
+    if (dx < -20) setDirection("left");
+  } else {
+    if (dy > 20) setDirection("down");
+    if (dy < -20) setDirection("up");
+  }
+
+  touchStart = null;
+}, {passive: true});
+
+resetGame();
+</script>
+</body>
+</html>
